@@ -176,14 +176,12 @@ func process_all_machines():
 	var processing_order = get_machine_processing_order()
 	
 	# Process machines with a small delay to allow animations to complete
-	for i in range(processing_order.size()):
-		var machine = processing_order[i]
+	for machine in processing_order:
 		if machine and machine.has_method("process_step"):
 			machine.process_step(grid)
-		
-		# Add a small delay between machine processing to allow animations
-		if i < processing_order.size() - 1:
-			await get_tree().create_timer(0.1).timeout
+	
+	for machine in processing_order:
+		machine.update_display()
 
 func get_machine_processing_order() -> Array:
 	var machines = []
@@ -191,13 +189,6 @@ func get_machine_processing_order() -> Array:
 		for y in range(GRID_SIZE):
 			if grid[x][y] != null:
 				machines.append(grid[x][y])
-	
-	# Sort machines by a deterministic order (e.g., by position)
-	machines.sort_custom(func(a, b): 
-		if a.grid_position.y != b.grid_position.y:
-			return a.grid_position.y < b.grid_position.y
-		return a.grid_position.x < b.grid_position.x)
-	
 	return machines
 
 func update_diners():

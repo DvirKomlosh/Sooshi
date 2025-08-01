@@ -12,6 +12,8 @@ var is_occupied: bool = false
 var is_processing: bool = false
 var is_moving: bool = false
 var animation_tween: Tween = null
+var visited_tag: int = 0
+var processed_tag: int = 0
 
 # Visual elements
 @onready var sprite: ColorRect = $Sprite
@@ -100,12 +102,18 @@ func process_step(grid: Array):
 		try_process_recursive(grid, [])
 
 func try_process_recursive(grid: Array, visited_machines: Array):
-	# Check for loops
-	if visited_machines.has(self):
-		# Loop detected - move all items in the loop together
-		move_loop_items(visited_machines)
+	# Check for loops using visited tag
+	if processed_tag == get_current_step_tag() or not current_ingredient:
+		processed_tag = get_current_step_tag()
 		return true
 	
+	if visited_tag == get_current_step_tag():
+		# Loop detected - find the loop machines efficiently
+		var loop_machines = get_loop_machines(visited_machines)
+		move_loop_items(loop_machines)
+		return true
+	
+	visited_tag = get_current_step_tag()
 	visited_machines.append(self)
 	
 	# Try to move ingredient to next machine
@@ -115,21 +123,23 @@ func try_process_recursive(grid: Array, visited_machines: Array):
 	
 	# Check if target position is within grid bounds
 	if target_x < 0 or target_x >= grid.size() or target_y < 0 or target_y >= grid[0].size():
-		return false
+		return true
 	
 	var target_machine = grid[target_x][target_y]
 	if target_machine and target_machine.has_method("add_ingredient"):
-		# Try to add ingredient to target machine
+		target_machine.try_process_recursive(grid, visited_machines)
+		if processed_tag == get_current_step_tag():
+			return true
 		if target_machine.add_ingredient(current_ingredient):
+			current_ingredient = null
+			is_occupied = false
 			# Start animation to target machine
 			animate_ingredient_to_target(target_machine)
+			processed_tag = get_current_step_tag()
 			return true
-		
-		# If target is occupied, try to move its ingredient recursively
-		if target_machine.current_ingredient and not target_machine.is_processing:
-			return target_machine.try_process_recursive(grid, visited_machines)
 	
-	return false
+	processed_tag = get_current_step_tag()
+	return true
 
 func advance_processing():
 	if is_processing:
@@ -140,21 +150,29 @@ func advance_processing():
 		if processing_time >= max_processing_time:
 			finish_processing()
 		
-		update_display()
 
 func finish_processing():
 	if is_processing:
 		is_processing = false
 		if current_ingredient:
 			current_ingredient.finish_processing()
-		update_display()
 
 
+
+func get_loop_machines(visited_machines: Array) -> Array:
+	# Find the current machine's position in the visited list
+	var current_index = visited_machines.find(self)
+	if current_index == -1:
+		return []
+	
+	# Return the machines from the current position to the end (the loop)
+	return visited_machines.slice(current_index)
 
 func move_loop_items(loop_machines: Array):
 	# Move all items in the loop one step forward
 	var loop_ingredients = []
 	for machine in loop_machines:
+		machine.processed_tag = get_current_step_tag()
 		if machine.current_ingredient:
 			loop_ingredients.append(machine.current_ingredient)
 			machine.current_ingredient = null
@@ -165,7 +183,13 @@ func move_loop_items(loop_machines: Array):
 		var next_machine = loop_machines[(i + 1) % loop_machines.size()]
 		next_machine.current_ingredient = loop_ingredients[i]
 		next_machine.is_occupied = true
-		next_machine.update_display()
+
+func get_current_step_tag() -> int:
+	# Get the current step tag from the main game
+	var main_game = get_tree().current_scene.get_node("MainGame")
+	if main_game:
+		return main_game.step_count
+	return 0
 
 func get_output_ingredient() -> Ingredient:
 	# Override in subclasses for specific output logic
@@ -176,7 +200,6 @@ func remove_ingredient() -> Ingredient:
 	current_ingredient = null
 	is_occupied = false
 	is_processing = false
-	update_display()
 	return ingredient
 
 func get_machine_info() -> String:
@@ -276,5 +299,3 @@ func finish_ingredient_movement():
 	else:
 		# Failed to add - this shouldn't happen with our logic, but just in case
 		print("Failed to add ingredient to target machine")
-	
-	update_display() 
