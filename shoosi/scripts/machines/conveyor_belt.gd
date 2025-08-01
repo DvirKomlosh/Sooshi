@@ -21,4 +21,4 @@ func can_process_ingredient() -> bool:
 func process_step(grid: Array):
 	# Conveyor belts only move ingredients, they don't process them
 	if current_ingredient and not is_processing:
-		try_move_ingredient(grid) 
+		try_process_recursive(grid, []) 

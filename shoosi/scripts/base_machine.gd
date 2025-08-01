@@ -10,6 +10,8 @@ extends Control
 var current_ingredient: Ingredient = null
 var is_occupied: bool = false
 var is_processing: bool = false
+var is_moving: bool = false
+var animation_tween: Tween = null
 
 # Visual elements
 @onready var sprite: ColorRect = $Sprite
@@ -54,6 +56,12 @@ func update_display():
 			progress_bar.value = float(processing_time) / float(max_processing_time) * 100.0
 		else:
 			progress_bar.visible = false
+	
+	# Update sprite color to show ingredient
+	if sprite and current_ingredient:
+		sprite.color = get_ingredient_color(current_ingredient)
+	elif sprite:
+		sprite.color = get_machine_color()
 
 func add_ingredient(ingredient: Ingredient) -> bool:
 	if current_ingredient == null and can_accept_ingredient(ingredient):
@@ -88,8 +96,40 @@ func process_step(grid: Array):
 	if is_processing:
 		advance_processing()
 	elif current_ingredient and not is_processing:
-		# Try to move ingredient to next machine
-		try_move_ingredient(grid)
+		# Use recursive processing to handle conflicts
+		try_process_recursive(grid, [])
+
+func try_process_recursive(grid: Array, visited_machines: Array):
+	# Check for loops
+	if visited_machines.has(self):
+		# Loop detected - move all items in the loop together
+		move_loop_items(visited_machines)
+		return true
+	
+	visited_machines.append(self)
+	
+	# Try to move ingredient to next machine
+	var target_pos = grid_position + direction
+	var target_x = int(target_pos.x)
+	var target_y = int(target_pos.y)
+	
+	# Check if target position is within grid bounds
+	if target_x < 0 or target_x >= grid.size() or target_y < 0 or target_y >= grid[0].size():
+		return false
+	
+	var target_machine = grid[target_x][target_y]
+	if target_machine and target_machine.has_method("add_ingredient"):
+		# Try to add ingredient to target machine
+		if target_machine.add_ingredient(current_ingredient):
+			# Start animation to target machine
+			animate_ingredient_to_target(target_machine)
+			return true
+		
+		# If target is occupied, try to move its ingredient recursively
+		if target_machine.current_ingredient and not target_machine.is_processing:
+			return target_machine.try_process_recursive(grid, visited_machines)
+	
+	return false
 
 func advance_processing():
 	if is_processing:
@@ -109,52 +149,7 @@ func finish_processing():
 			current_ingredient.finish_processing()
 		update_display()
 
-func try_move_ingredient(grid: Array):
-	var target_pos = grid_position + direction
-	var target_x = int(target_pos.x)
-	var target_y = int(target_pos.y)
-	
-	# Check if target position is within grid bounds
-	if target_x < 0 or target_x >= grid.size() or target_y < 0 or target_y >= grid[0].size():
-		return false
-	
-	var target_machine = grid[target_x][target_y]
-	if target_machine and target_machine.has_method("add_ingredient"):
-		# Use recursive movement to handle conflicts
-		var moved = try_move_recursive(grid, target_machine, [])
-		if moved:
-			current_ingredient = null
-			is_occupied = false
-			update_display()
-			return true
-	
-	return false
 
-func try_move_recursive(grid: Array, target_machine: BaseMachine, visited_machines: Array) -> bool:
-	# Check for loops
-	if visited_machines.has(target_machine):
-		# Loop detected - move all items in the loop together
-		move_loop_items(visited_machines)
-		return true
-	
-	visited_machines.append(target_machine)
-	
-	# Try to add ingredient to target machine
-	if target_machine.add_ingredient(current_ingredient):
-		return true
-	
-	# If target is occupied, try to move its ingredient recursively
-	if target_machine.current_ingredient and not target_machine.is_processing:
-		var target_target_pos = target_machine.grid_position + target_machine.direction
-		var target_target_x = int(target_target_pos.x)
-		var target_target_y = int(target_target_pos.y)
-		
-		if target_target_x >= 0 and target_target_x < grid.size() and target_target_y >= 0 and target_target_y < grid[0].size():
-			var target_target_machine = grid[target_target_x][target_target_y]
-			if target_target_machine and target_target_machine.has_method("add_ingredient"):
-				return try_move_recursive(grid, target_target_machine, visited_machines)
-	
-	return false
 
 func move_loop_items(loop_machines: Array):
 	# Move all items in the loop one step forward
@@ -191,4 +186,95 @@ func get_machine_info() -> String:
 		info += "Ingredient: " + current_ingredient.get_display_name() + "\n"
 		if is_processing:
 			info += "Processing: " + str(processing_time) + "/" + str(max_processing_time)
-	return info 
+	return info
+
+func animate_ingredient_to_target(target_machine: BaseMachine):
+	if not current_ingredient or is_moving:
+		return
+	
+	is_moving = true
+	
+	# Create a visual representation of the ingredient for animation
+	var ingredient_sprite = ColorRect.new()
+	ingredient_sprite.color = get_ingredient_color(current_ingredient)
+	ingredient_sprite.size = Vector2(20, 20)
+	
+	# Store reference to target machine and sprite
+	ingredient_sprite.set_meta("target_machine", target_machine)
+	ingredient_sprite.set_meta("source_machine", self)
+	
+	# Add to the scene tree
+	get_tree().current_scene.add_child(ingredient_sprite)
+	
+	# Calculate positions
+	var start_global_pos = global_position + Vector2(10, 10)  # Center of current machine
+	var target_global_pos = target_machine.global_position + Vector2(10, 10)  # Center of target machine
+	
+	# Set initial position
+	ingredient_sprite.global_position = start_global_pos
+	
+	# Create tween for smooth movement with easing
+	animation_tween = create_tween()
+	animation_tween.set_ease(Tween.EASE_IN_OUT)
+	animation_tween.set_trans(Tween.TRANS_QUAD)
+	animation_tween.tween_property(ingredient_sprite, "global_position", target_global_pos, 0.5)
+	animation_tween.tween_callback(finish_ingredient_movement)
+
+func get_ingredient_color(ingredient: Ingredient) -> Color:
+	match ingredient.type:
+		"rice":
+			return Color.WHITE
+		"salmon":
+			return Color(1, 0.5, 0.5, 1)  # Light red
+		"tuna":
+			return Color(0.5, 0.5, 1, 1)  # Light blue
+		"nori":
+			return Color(0.2, 0.4, 0.2, 1)  # Dark green
+		"avocado":
+			return Color(0.2, 0.8, 0.2, 1)  # Green
+		"tamago":
+			return Color(1, 1, 0.5, 1)  # Light yellow
+		"carrot":
+			return Color(1, 0.6, 0.2, 1)  # Orange
+		"salmon_nigiri", "tuna_nigiri", "tamago_nigiri":
+			return Color(1, 1, 0.8, 1)  # Light cream
+		"nori_roll":
+			return Color(0.3, 0.6, 0.3, 1)  # Medium green
+		_:
+			return Color.GRAY
+
+func finish_ingredient_movement():
+	# Find the animated sprite that just finished
+	var animated_sprites = get_tree().current_scene.get_children()
+	var ingredient_sprite = null
+	var target_machine = null
+	var source_machine = null
+	
+	for sprite in animated_sprites:
+		if sprite is ColorRect and sprite.has_meta("source_machine") and sprite.get_meta("source_machine") == self:
+			ingredient_sprite = sprite
+			target_machine = sprite.get_meta("target_machine")
+			source_machine = sprite.get_meta("source_machine")
+			break
+	
+	if not ingredient_sprite or not target_machine:
+		return
+	
+	# Remove the animated sprite
+	ingredient_sprite.queue_free()
+	
+	# Transfer ingredient to target machine
+	var ingredient = current_ingredient
+	current_ingredient = null
+	is_occupied = false
+	is_moving = false
+	
+	# Add to target machine
+	if target_machine.add_ingredient(ingredient):
+		# Successfully added to target
+		pass
+	else:
+		# Failed to add - this shouldn't happen with our logic, but just in case
+		print("Failed to add ingredient to target machine")
+	
+	update_display() 

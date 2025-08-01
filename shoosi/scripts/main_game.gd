@@ -54,27 +54,41 @@ func setup_ui_connections():
 
 func spawn_external_conveyors():
 	# Spawn conveyor belts on the outer loop (15x15 grid perimeter)
-	for i in range(GRID_SIZE):
-		# Top row
+	# Top row (left to right)
+	for i in range(GRID_SIZE - 1):
 		place_machine_at(i, 0, "conveyor_belt", Vector2.RIGHT)
-		# Bottom row
-		place_machine_at(i, GRID_SIZE - 1, "conveyor_belt", Vector2.LEFT)
-		# Left column
-		place_machine_at(0, i, "conveyor_belt", Vector2.DOWN)
-		# Right column
-		place_machine_at(GRID_SIZE - 1, i, "conveyor_belt", Vector2.UP)
+	
+	# Right column (top to bottom, excluding top corner)
+	for i in range(GRID_SIZE - 1):
+		place_machine_at(GRID_SIZE - 1, i, "conveyor_belt", Vector2.DOWN)
+	
+	# Bottom row (right to left, excluding right corner)
+	for i in range(GRID_SIZE - 1):
+		place_machine_at(GRID_SIZE - 1 - i, GRID_SIZE - 1, "conveyor_belt", Vector2.LEFT)
+	
+	# Left column (bottom to top, excluding bottom corner)
+	for i in range(GRID_SIZE - 1):
+		place_machine_at(0, GRID_SIZE - 1 - i, "conveyor_belt", Vector2.UP)
+	
 
 func spawn_internal_conveyors():
 	# Spawn conveyor belts on the inner loop (5x5 grid perimeter)
-	for i in range(INNER_LOOP_SIZE):
-		# Top row of inner loop
+	# Top row of inner loop (left to right)
+	for i in range(INNER_LOOP_SIZE - 1):
 		place_machine_at(INNER_LOOP_START + i, INNER_LOOP_START, "conveyor_belt", Vector2.RIGHT)
-		# Bottom row of inner loop
-		place_machine_at(INNER_LOOP_START + i, INNER_LOOP_END, "conveyor_belt", Vector2.LEFT)
-		# Left column of inner loop
-		place_machine_at(INNER_LOOP_START, INNER_LOOP_START + i, "conveyor_belt", Vector2.DOWN)
-		# Right column of inner loop
-		place_machine_at(INNER_LOOP_END, INNER_LOOP_START + i, "conveyor_belt", Vector2.UP)
+	
+	# Right column of inner loop (top to bottom, excluding top corner)
+	for i in range(INNER_LOOP_SIZE - 1):
+		place_machine_at(INNER_LOOP_END, INNER_LOOP_START + i, "conveyor_belt", Vector2.DOWN)
+	
+	# Bottom row of inner loop (right to left, excluding right corner)
+	for i in range(INNER_LOOP_SIZE - 1):
+		place_machine_at(INNER_LOOP_END - i, INNER_LOOP_END, "conveyor_belt", Vector2.LEFT)
+	
+	# Left column of inner loop (bottom to top, excluding bottom corner)
+	for i in range(INNER_LOOP_SIZE - 1):
+		place_machine_at(INNER_LOOP_START, INNER_LOOP_END - i, "conveyor_belt", Vector2.UP)
+
 
 func spawn_diners():
 	# Spawn 8 diners on the inner side of the inner loop
@@ -143,40 +157,33 @@ func execute_game_step():
 	step_completed.emit()
 
 func spawn_ingredients_on_external_loop():
-	var ingredients = ["nori", "salmon", "tuna", "avocado", "rice", "tamago", "carrot"]
-	var external_positions = get_external_loop_positions()
+	var ingredient_sequence = ["rice", "salmon", "tuna", "nori", "avocado", "tamago", "carrot"]
+	var spawn_position = Vector2(0, 0)  # Top-left corner
 	
-	# Spawn ingredients randomly on external loop
-	for i in range(3):  # Spawn 3 ingredients per step
-		var random_pos = external_positions[randi() % external_positions.size()]
-		var random_ingredient = ingredients[randi() % ingredients.size()]
-		
-		var machine = grid[random_pos.x][random_pos.y]
-		if machine and machine.has_method("add_ingredient"):
-			machine.add_ingredient(create_ingredient(random_ingredient))
+	# Get the ingredient for this step based on step count
+	var ingredient_index = step_count % ingredient_sequence.size()
+	var ingredient_type = ingredient_sequence[ingredient_index]
+	
+	# Spawn the ingredient at the top-left corner
+	var machine = grid[spawn_position.x][spawn_position.y]
+	if machine and machine.has_method("add_ingredient"):
+		machine.add_ingredient(create_ingredient(ingredient_type))
 
-func get_external_loop_positions() -> Array:
-	var positions = []
-	
-	# Top and bottom rows
-	for x in range(GRID_SIZE):
-		positions.append(Vector2(x, 0))
-		positions.append(Vector2(x, GRID_SIZE - 1))
-	
-	# Left and right columns (excluding corners)
-	for y in range(1, GRID_SIZE - 1):
-		positions.append(Vector2(0, y))
-		positions.append(Vector2(GRID_SIZE - 1, y))
-	
-	return positions
+
 
 func process_all_machines():
 	# Create a copy of the grid to avoid conflicts during processing
 	var processing_order = get_machine_processing_order()
 	
-	for machine in processing_order:
+	# Process machines with a small delay to allow animations to complete
+	for i in range(processing_order.size()):
+		var machine = processing_order[i]
 		if machine and machine.has_method("process_step"):
 			machine.process_step(grid)
+		
+		# Add a small delay between machine processing to allow animations
+		if i < processing_order.size() - 1:
+			await get_tree().create_timer(0.1).timeout
 
 func get_machine_processing_order() -> Array:
 	var machines = []
