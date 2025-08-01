@@ -1,0 +1,8 @@
+This directory should contain machine textures:
+- conveyor_belt.png
+- rice_cooker.png
+- fish_cutter.png
+- dish_composer.png
+- diner.png
+
+For now, the game will use colored rectangles as placeholders. 

@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqxvhqxqxqxqx"]
+
+[ext_resource type="PackedScene" uid="uid://c8xvhqxqxqxqx" path="res://scenes/main_game.tscn" id="1_0"]
+
+[node name="Main" type="Node"]
+
+[node name="MainGame" parent="." instance=ExtResource("1_0")]
+grow_horizontal = 2
+grow_vertical = 2
